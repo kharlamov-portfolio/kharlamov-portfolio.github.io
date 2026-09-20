@@ -6,7 +6,6 @@ from __future__ import annotations
 import html
 import os
 import re
-import shutil
 import subprocess
 from collections import deque
 from pathlib import Path
@@ -17,7 +16,9 @@ SOURCE = os.environ.get(
     "PORTFOLIO_SOURCE",
     "https://fedor-kharlamov-portfolio.kharlamov-f29.chatgpt.site",
 ).rstrip("/")
-PUBLIC_URL = os.environ.get("PUBLIC_URL", "https://friedrich-29.github.io").rstrip("/")
+PUBLIC_URL = os.environ.get(
+    "PUBLIC_URL", "https://kharlamov-portfolio.github.io"
+).rstrip("/")
 OUTPUT = Path(os.environ.get("OUTPUT_DIR", "_site"))
 USER_AGENT = "Mozilla/5.0 (compatible; portfolio-static-mirror/1.0)"
 
@@ -41,9 +42,14 @@ def fetch(url: str) -> bytes:
             "--show-error",
             "--location",
             "--retry",
-            "3",
+            "8",
+            "--retry-all-errors",
+            "--retry-delay",
+            "2",
+            "--connect-timeout",
+            "20",
             "--max-time",
-            "60",
+            "120",
             "--user-agent",
             USER_AGENT,
             url,
@@ -120,8 +126,14 @@ def extract_assets(document: str) -> set[str]:
 
 def save_asset(path: str, queued: deque[str], seen: set[str]) -> None:
     url = SOURCE + path
-    data = fetch(url)
     destination = asset_output(path)
+    try:
+        data = fetch(url)
+    except RuntimeError:
+        if not destination.exists():
+            raise
+        print(f"Keeping existing asset after a temporary fetch failure: {path}")
+        data = destination.read_bytes()
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(data)
     if path.endswith(".css"):
@@ -133,9 +145,7 @@ def save_asset(path: str, queued: deque[str], seen: set[str]) -> None:
 
 
 def build() -> None:
-    if OUTPUT.exists():
-        shutil.rmtree(OUTPUT)
-    OUTPUT.mkdir(parents=True)
+    OUTPUT.mkdir(parents=True, exist_ok=True)
     (OUTPUT / ".nojekyll").write_text("", encoding="utf-8")
 
     page_queue: deque[str] = deque(["/"])
